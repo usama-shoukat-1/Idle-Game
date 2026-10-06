@@ -8,8 +8,8 @@ canStart → pay → (instant ? apply : persist job + start timer) → apply →
 ```
 
 Because the engine only reads `UpgradeDefinition` fields, **adding content never edits this
-file**. Phase 0 registers zero upgrades on purpose; the engine is proven against synthetic
-definitions in `tests/upgrade-engine.test.ts`.
+file**. Phase 1 registers the ten Old Café tiers (`src/data/upgrades/old_cafe_tiers.ts`) plus the
+synthetic definitions in `tests/upgrade-engine.test.ts`.
 
 ## API
 
@@ -21,7 +21,7 @@ completeNow(id, reason?) → boolean      // timer expiry, gem acceleration, deb
 reduceRemaining(id, ms) → appliedMs      // rewarded-ad speed-up hook
 getAccelerationCost(id) → Cost | null    // gem price for an instant finish
 accelerate(id) → boolean
-cancel(id) → boolean                     // no refund (policy is a Phase 1 decision)
+cancel(id) → boolean                     // no refund (Phase 1 policy: cancelling loses the cost)
 getActiveJobs() / getActiveJobForBuilding(id) / getPrimaryActiveJob()
 getRemainingMs(id) / getProgress(id) / isRunning(id) / isCompleted(id)
 rehydrate() → { resumed, completedOffline }
@@ -66,10 +66,21 @@ in the upgrade definition. Keeping spend + apply in one place is what prevents
 avoid. `BuildingSystem.applyTier` remains public for content-driven one-off transitions
 (scripted unlocks, debug tools), but gameplay must go through upgrades.
 
-## Gems & ads (foundation only)
+## Gems & ads (Phase 1)
 
 - **Gem acceleration**: `economy.acceleration { gemsPerMinute, minimumGems }` in content
-  converts remaining time to a gem price. Values are placeholders.
+  converts remaining time to a gem price (`1 gem per remaining minute`, minimum 1). Values are
+  placeholders for the flow, not final monetization balance.
 - **Rewarded time skip**: `AdRewardSystem` calls `reduceRemaining` only when a reward
-  definition says `kind: 'timeSkip'` and only after the provider confirms a completed view.
-- Neither is tuned, gated, or surfaced as a final UX in Phase 0.
+  definition says `kind: 'timeSkip'`, only after the provider confirms a completed view, and
+  caps a single view (25 % of the remainder, max 15 minutes).
+- Both emit `upgrade:speed-up` with a `source` of `ad` | `gems` | `debug`, which is what the
+  `speedup_used` analytics event and the UI feedback hang off.
+
+## Rehydration and the income anchor
+
+`rehydrate()` resumes persisted jobs and applies any that finished while the game was closed.
+That offline completion is the one tier change that must **not** move a building's income anchor
+(`applyTier(..., { preserveIncomeAnchor: true })`): the offline system is about to pay for the
+whole absence at the returned tier's rate. Without this, closing the game with a job in flight
+would silently discard the entire offline window (`docs/PHASE_1_QA.md` §3, bug 1).

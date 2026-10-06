@@ -30,18 +30,17 @@ The design enforces the platform rule that rewarded ads are an **explicit user c
 5. Cooldowns are checked before showing an ad, so a player cannot be shown a second ad for a
    reward they cannot receive yet.
 
-### Reward kinds and Phase 0 wiring
+### Reward kinds and Phase 1 wiring
 
 | kind | Status |
 |---|---|
-| `coins` | fully wired (EconomySystem) |
-| `gems` | fully wired (EconomySystem) |
-| `timeSkip` | fully wired (UpgradeSystem.reduceRemaining); refuses with `no-target` when nothing is running so the player never wastes an ad |
-| `incomeMultiplier` | declared + validated, **intentionally refuses** until the Phase 1 boost system exists (`not-supported`, logged loudly) |
-| `offlineBoost` | same as above |
+| `coins` | wired (EconomySystem); optional `percentOfNextUpgradeCost` scaling with min/max clamp |
+| `gems` | wired (EconomySystem) |
+| `timeSkip` | wired (UpgradeSystem.reduceRemaining); refuses with `no-target` when nothing is running so the player never wastes an ad |
+| `incomeMultiplier` | wired (BoostSystem): timed multiplier, deadline-based, extends instead of stacking |
+| `offlineBoost` | wired (OfflineIncomeSystem.applyOfflineBoost): doubles the *pending* reward once per absence |
 
-Shipped Phase 0 content uses only `coins` and `timeSkip` (two clearly-labelled placeholders so
-QA can exercise the mock flow).
+All four kinds are shipped by Phase 1 content (see the table below).
 
 ### Mock provider behaviour
 
@@ -52,8 +51,10 @@ outcome (`rewarded` | `dismissed` | `failed`), optional latency and placement al
 ## Purchases
 
 `PurchaseSystem` wraps the store provider and applies grants from the **catalog**
-(`src/config/content/store_catalog.ts`), which is **empty in Phase 0** — no product id exists
-in the repository yet.
+(`src/config/content/index.ts`). Phase 1 ships a three-entry **development** catalog
+(`gems.small` 100, `gems.medium` 600, `gems.large` 1,500) so the flow, entitlement bookkeeping
+and gem economy can be exercised end to end. No real product id or price exists in the
+repository: prices come from the provider (`MOCK_STORE_PRICES` labels them `mock · …`).
 
 Rules encoded in the implementation:
 
@@ -73,8 +74,24 @@ Adding a product later = one catalog entry + provider mapping. No gameplay code 
 `src/config/content/index.ts`:
 
 ```ts
-FEATURE_FLAGS = { debugTools: import.meta.env.DEV, rewardedAds: false, purchases: false, layoutDebugOverlay: false }
+FEATURE_FLAGS = { debugTools: import.meta.env.DEV, rewardedAds: true, purchases: true, layoutDebugOverlay: false }
 ```
 
-Phase 1 turns `rewardedAds`/`purchases` on when a real provider exists. Until then the UI paths
-exist but the systems report `unavailable`, and no monetization code executes in gameplay.
+**Phase 1 state:** both flags are on, because both are wired to *mock* providers — the flow,
+cooldowns, caps, analytics and rewards are real, the network is not. Turning a flag off hides
+every affordance without touching gameplay code (and `F8`/`F10` in a dev build disable the mock
+providers at runtime to prove the `unavailable` paths).
+
+Phase 1 reward set (content, `src/data/economy/balance.ts`):
+
+| Reward | Kind | Effect | Cooldown |
+|---|---|---|---|
+| `reward.bonus_coins` | `coins` | 8 % of the next restoration cost, clamped 50–500 | 5 min |
+| `reward.upgrade_speedup` | `timeSkip` | 25 % of the remaining job, capped at 15 min | 5 min |
+| `reward.income_boost` | `incomeMultiplier` | 2× income for 30 min (extends, never stacks) | 20 min |
+| `reward.offline_double` | `offlineBoost` | 2× the pending offline reward, once per absence | — |
+
+Gem acceleration is content-driven (`1 gem per remaining minute`, minimum 1) and the gem packs are
+development catalog entries with mock prices — **not** final monetization balance. Cooldowns are
+tracked in memory for now, so a reload resets them (documented limitation, see
+`docs/PHASE_1_QA.md` §5).

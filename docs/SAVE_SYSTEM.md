@@ -101,3 +101,20 @@ never more than ~20 seconds stale.
 - Read on load; a missing/invalid/far-future anchor is rejected (`isPlausibleTimestamp`).
 - Never trusted blindly: elapsed time is clamped to `economy.offline.maxDurationMs` and
   negative elapsed is treated as 0.
+
+### Pending offline rewards (Phase 1)
+
+The offline payout is **not** granted at load. `state.offline.pending` holds the calculated
+reward (`coins`, `elapsedMs`, `effectiveElapsedMs`, `capped`, `perBuilding`, `boosted`) until the
+player collects it, which is what makes the summary popup honest and duplicate-proof:
+
+- reloading before collecting keeps the same reward (`settle()` **merges** a new window into an
+  already pending one instead of overwriting it — sum of coins/elapsed, union of the per-building
+  breakdown, `capped` OR-ed, so nothing is lost and nothing overlaps);
+- collecting clears the pending reward *before* the payout, so a failure mid-collect cannot pay
+  twice (losing a reward is recoverable; duplicating it is not);
+- income anchors are advanced when the reward is *calculated*, never when it is collected, so the
+  same span can never be earned as both offline and live income;
+- an upgrade that completed while the game was closed is applied with
+  `applyTier(..., { preserveIncomeAnchor: true })`, so its tier change does not rewind the income
+  anchor and silently discard the absence (`docs/PHASE_1_QA.md` §3, bug 1).

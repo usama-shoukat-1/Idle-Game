@@ -53,15 +53,18 @@ All numbers live in `src/data/economy/balance.ts` (`EconomyBalanceConfig`):
 `startingCoins`, `startingGems`, caps, `offline { maxDurationMs, efficiency, minimumDurationMs }`,
 `acceleration { gemsPerMinute, minimumGems }`, `rewardedRewards[]`.
 
-**Phase 0 values are placeholders** (documented in the file) and are explicitly not final.
-`offline.efficiency` is `0` until Phase 1 tunes offline income.
+**Phase 1 values**: 500 starting coins / 0 gems, offline `efficiency: 1` with a 4-hour cap and
+a 1-minute minimum window, gem acceleration at 1 gem per remaining minute, and four rewarded
+rewards. The restoration table itself lives with its content in
+`src/data/buildings/building_old_cafe.ts`. The gem/monetization numbers are placeholders for the
+flow and are explicitly not final.
 
 ## Income maths (single implementation)
 
 `BuildingSystem` owns income:
 
 ```
-ratePerMs = baseRate(model) × currentTierMultiplier × (1 + synergyBonus/100)
+ratePerMs = baseRate(model) × currentTierMultiplier × (1 + synergyBonus/100) × activeBoostMultiplier
 earned    = floor(ratePerMs × elapsedMs × efficiency)
 ```
 
@@ -71,7 +74,11 @@ earned    = floor(ratePerMs × elapsedMs × efficiency)
   so slow producers still pay out correctly instead of rounding to zero forever.
 - The same function serves online ticks and offline settlement, so there is no second,
   divergent "offline rate". `tests/game-state.test.ts` + `tests/offline-progression.test.ts`
-  cover both.
+  cover both, and the Phase 1 suites cover the restored café's real numbers.
+- **Boosts are part of the rate** (`BoostSystem.getIncomeMultiplier`) rather than a separate
+  multiplier applied by callers: a 2× income boost therefore affects live income, the HUD preview
+  and offline settlement through one code path, and can never be double-applied. A boost that has
+  expired by the time income is evaluated simply contributes 1×.
 
 ## What NOT to do
 

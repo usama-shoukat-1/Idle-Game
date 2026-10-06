@@ -1,7 +1,11 @@
 # Phase 0 QA Checklist
 
-Foundation verification. This phase ends when the reusable systems are functional — not when
-there is gameplay content (there deliberately is none).
+Foundation verification. This phase ended when the reusable systems became functional — with no
+gameplay content by design. It is kept as the regression checklist for the foundation.
+
+> **Phase 1 supersedes the GameScene rows below**: the game scene is now the playable Old Café
+> vertical slice. Use [`PHASE_1_QA.md`](PHASE_1_QA.md) for gameplay QA and this file for the
+> foundation/system regressions.
 
 ## 1. Automated gates
 
@@ -25,7 +29,7 @@ npm run dev           # http://localhost:5173
 - [ ] Boot splash disappears and the canvas appears.
 - [ ] Scene order observed in the console: `boot complete` → `preload complete` → main menu.
 - [ ] Main menu shows title, Play, Settings, wallet line, save-age line and a build stamp.
-- [ ] Play → LoadingScene (`Restoring the district…`) → GameScene placeholder world.
+- [ ] Play → LoadingScene (`Restoring the district…`) → GameScene (the Old Café since Phase 1).
 - [ ] GameScene shows the stage card (stage name + description from content), the top bar with
       coins and gems, and a hint line.
 - [ ] Pause (☰) → Pause → Resume works; Main menu returns to the menu.

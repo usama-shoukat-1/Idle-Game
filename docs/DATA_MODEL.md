@@ -56,6 +56,8 @@ GameState {
   upgrades     { active: Record<UpgradeId, UpgradeJobState>, completed: UpgradeId[] }
   workers      { entries: Record<WorkerId, WorkerRuntimeState> }
   progression  { currentStageId, stages: Record<StageId, StageProgressState>, unlockedStageIds }
+  offline      { pending: PendingOfflineReward | null, lastCollectedAt }   // calculated, not granted
+  boosts       { active: BoostState[] }                                   // deadline-based multipliers
   redevelopment{ level, points }        // prestige placeholder, no economy yet
   session      { startedAt, lastSaveAt, playTimeMs, resumed }
   analytics    { totalCoinsEarned, totalCoinsSpent, totalGemsEarned, totalGemsSpent, lastSessionAt }
@@ -67,6 +69,11 @@ GameState {
 
 Notes:
 - `session.lastSaveAt` is the anchor for offline progression — see `SAVE_SYSTEM.md`.
+- `offline.pending` is a *calculated* reward waiting to be collected (coins, elapsed, per-building
+  breakdown, `boosted`). It is persisted precisely so a reload before collecting cannot lose the
+  reward or pay it twice — see `SAVE_SYSTEM.md` §"Pending offline rewards".
+- `boosts.active` stores deadlines (`startedAt`/`expiresAt`) rather than remaining time, so a
+  boost survives a reload; expired entries are pruned lazily on read.
 - `buildings.entries` is **sparse**: a row is created on first interaction
   (`BuildingSystem.ensureRuntime`), so a 45-building game does not pay for 45 idle rows.
 - `incomeProgress` is a cached display value only; all maths derives from timestamps, so a
