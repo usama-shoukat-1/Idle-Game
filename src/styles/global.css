@@ -1,0 +1,157 @@
+/* RESTORE IT! - global page styles.
+ * The game itself renders inside <canvas>; this file only owns the page shell,
+ * the boot splash and the portrait nudge. Keep DOM usage minimal (mobile perf). */
+
+:root {
+  --ri-bg: #0e1117;
+  --ri-bg-soft: #161b22;
+  --ri-accent: #ffb347;
+  --ri-text: #e6edf3;
+  --ri-text-dim: #9aa7b4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ri-bg);
+  color: var(--ri-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Mobile-feel: no text selection / callouts / tap highlight on the game canvas. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#game-root {
+  position: fixed;
+  inset: 0;
+}
+
+#game-root canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Safe-area probe: the browser resolves env() here so the canvas layout code can
+   read the notch / home-indicator insets as plain numbers. */
+#safe-area-probe {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------- boot splash ---------- */
+
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: radial-gradient(circle at 50% 35%, #1c2431 0%, var(--ri-bg) 70%);
+  transition: opacity 320ms ease;
+  z-index: 20;
+}
+
+#boot-splash.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#boot-splash .splash-mark {
+  font-size: clamp(24px, 7vw, 40px);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--ri-accent);
+  text-transform: uppercase;
+}
+
+#boot-splash .splash-sub {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--ri-text-dim);
+}
+
+#boot-splash .splash-bar {
+  margin-top: 6px;
+  width: min(60vw, 260px);
+  height: 4px;
+  border-radius: 999px;
+  background: #232c39;
+  overflow: hidden;
+}
+
+#boot-splash .splash-bar span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ri-accent);
+  animation: splash-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes splash-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+/* ---------- landscape nudge ---------- */
+
+#rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+  background: rgba(14, 17, 23, 0.94);
+  color: var(--ri-text);
+}
+
+#rotate-hint .rotate-icon {
+  font-size: 40px;
+  color: var(--ri-accent);
+}
+
+#rotate-hint p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+#rotate-hint small {
+  color: var(--ri-text-dim);
+}
+
+/* Phones held sideways - the only case where portrait-first content is unusable. */
+@media (orientation: landscape) and (max-height: 500px) {
+  #rotate-hint {
+    display: flex;
+  }
+}
