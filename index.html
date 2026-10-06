@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0e1117" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="RESTORE IT! - restore abandoned places, build a business, grow a district." />
+    <title>RESTORE IT!</title>
+    <!-- global.css is imported by src/main.ts so Vite bundles/hashes it consistently -->
+  </head>
+  <body>
+    <div id="game-root" aria-label="RESTORE IT! game canvas"></div>
+
+    <!-- Zero-size element used to read CSS env(safe-area-inset-*) from JS. -->
+    <div id="safe-area-probe" aria-hidden="true"></div>
+
+    <!-- Shown until the engine boots. Removed by src/main.ts. -->
+    <div id="boot-splash">
+      <div class="splash-mark">RESTORE IT!</div>
+      <div class="splash-sub">preparing the workshop…</div>
+      <div class="splash-bar"><span></span></div>
+    </div>
+
+    <!-- Mobile-first: the game is designed for portrait. Nudge landscape phones. -->
+    <div id="rotate-hint">
+      <div class="rotate-icon">⟳</div>
+      <p>RESTORE IT! plays best in portrait.</p>
+      <small>Rotate your device to continue.</small>
+    </div>
+
+    <noscript>
+      <p style="color: #e6edf3; font-family: system-ui, sans-serif; padding: 24px">
+        RESTORE IT! needs JavaScript enabled to run.
+      </p>
+    </noscript>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
