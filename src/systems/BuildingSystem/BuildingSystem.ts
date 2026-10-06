@@ -8,6 +8,7 @@ import type { BuildingRuntimeState, GameState } from '@/core/types/state';
 import { STATE_LIMITS } from '@/core/types/state';
 import { computeElapsedMs } from '@/core/utils/TimeUtils';
 import { clamp, percentToMultiplier } from '@/core/utils/NumberUtils';
+import type { BoostSystem } from '@/systems/BoostSystem/BoostSystem';
 import type { EconomySystem } from '@/systems/EconomySystem/EconomySystem';
 import { evaluateRequirements, type RequirementContext } from '@/systems/ProgressionSystem/RequirementEvaluator';
 
@@ -56,6 +57,12 @@ export class BuildingSystem {
     private readonly state: GameState,
     private readonly content: ContentRegistry,
     private readonly economy: EconomySystem,
+    /**
+     * Optional: temporary multipliers (2x income boosts). Injected rather than imported so
+     * the income maths stays a pure function of the building definition plus whatever
+     * multipliers the game currently has active.
+     */
+    private readonly boosts: BoostSystem | null,
     private readonly events: EventBus,
     private readonly clock: GameClock,
   ) {}
@@ -140,7 +147,12 @@ export class BuildingSystem {
    * supported way to advance restoration tiers, so cost/duration/prerequisite logic
    * exists in exactly one place.
    */
-  applyTier(buildingId: BuildingId, tier: number, reason: string): boolean {
+  applyTier(
+    buildingId: BuildingId,
+    tier: number,
+    reason: string,
+    options: { preserveIncomeAnchor?: boolean } = {},
+  ): boolean {
     const definition = this.content.getBuilding(buildingId);
     const runtime = this.ensureRuntime(buildingId);
 
@@ -151,32 +163,86 @@ export class BuildingSystem {
     const tierDefinition = this.content.getTier(buildingId, target);
     runtime.tier = target;
     runtime.visualState = tierDefinition?.visualState ?? runtime.visualState;
-    // Income interval restarts so the player never gains or loses a partial tick.
-    runtime.lastIncomeAt = this.clock.now();
-    runtime.incomeProgress = 0;
+    // Income interval restarts so the player never gains or loses a partial tick. The one
+    // exception is a tier change applied during load (a job that finished while the game was
+    // closed): the income anchor must stay where it was, because the offline system is about
+    // to pay for that span at the *new* rate. Rewinding the anchor there would silently
+    // throw the whole offline window away.
+    if (!options.preserveIncomeAnchor) {
+      runtime.lastIncomeAt = this.clock.now();
+      runtime.incomeProgress = 0;
+    }
 
     this.events.emit('building:tier-changed', {
       buildingId,
       tier: runtime.tier,
       visualState: runtime.visualState,
     });
+
+    // Final tier reached: announce it once, with the numbers the completion screen shows.
+    // (Content-driven prediction only - no balance values live in this file.)
+    if (target === maxTier && maxTier > 0) {
+      this.events.emit('building:completed', {
+        buildingId,
+        totalCost: this.getTotalRestorationCost(buildingId),
+        incomePerMinute: Math.round(this.getIncomePerSecond(buildingId) * 60),
+      });
+    }
+
     logger.debug('building', `${definition.id} advanced to tier ${runtime.tier}`, { reason });
     return true;
   }
 
+  /** Total coins the restoration tiers of a building cost, from tier 1 to its maximum. */
+  getTotalRestorationCost(buildingId: BuildingId): number {
+    const definition = this.content.tryGetBuilding(buildingId);
+    if (!definition) return 0;
+    return definition.restorationTiers
+      .filter((tier) => tier.tier >= 1 && tier.cost.currency === 'coins')
+      .reduce((total, tier) => total + tier.cost.amount, 0);
+  }
+
+  /**
+   * Predicted income once a given tier is reached, in coins per minute. The UI uses this
+   * for the "expected income increase" preview; it never hard-codes a number.
+   */
+  predictIncomePerMinute(buildingId: BuildingId, tier: number): number {
+    const definition = this.content.tryGetBuilding(buildingId);
+    if (!definition) return 0;
+    const tierDefinition = this.content.getTier(buildingId, tier);
+    const multiplier = tierDefinition?.incomeMultiplier ?? this.getTierMultiplier(buildingId);
+    const synergyMultiplier = percentToMultiplier(this.getSynergyBonusPercent(buildingId));
+    return baseRatePerMs(definition.baseIncome) * 1000 * 60 * multiplier * synergyMultiplier;
+  }
+
+  /** True when the building has reached its final restoration tier. */
+  isFullyRestored(buildingId: BuildingId): boolean {
+    const maxTier = this.content.getMaxTier(buildingId);
+    return maxTier > 0 && this.getTier(buildingId) >= maxTier;
+  }
+
   // --- Income --------------------------------------------------------------
 
-  /** Coins per millisecond at the building's current tier + bonuses. */
+  /**
+   * Coins per millisecond at the building's current tier, bonuses and active boosts.
+   * This is the single income formula used by live play AND offline progression.
+   */
   getIncomeRatePerMs(buildingId: BuildingId): number {
     const definition = this.content.getBuilding(buildingId);
     const tierMultiplier = this.getTierMultiplier(buildingId);
     const synergyMultiplier = percentToMultiplier(this.getSynergyBonusPercent(buildingId));
+    const boostMultiplier = this.boosts?.getIncomeMultiplier(buildingId) ?? 1;
     const base = baseRatePerMs(definition.baseIncome);
-    return base * tierMultiplier * synergyMultiplier;
+    return base * tierMultiplier * synergyMultiplier * boostMultiplier;
   }
 
   getIncomePerSecond(buildingId: BuildingId): number {
     return this.getIncomeRatePerMs(buildingId) * 1000;
+  }
+
+  /** Player-facing income rate (coins per minute, summed for every unlocked building). */
+  getTotalIncomePerMinute(stageId?: StageId): number {
+    return this.getTotalIncomePerSecond(stageId) * 60;
   }
 
   /** Absolute multiplier of the current tier (not cumulative - see docs/DATA_MODEL.md). */
@@ -305,6 +371,20 @@ export class BuildingSystem {
     return this.content
       .getAllBuildings()
       .filter((building) => (!stageId || building.stageId === stageId) && this.isUnlocked(building.id));
+  }
+
+  /**
+   * Unlocks every building whose content marks it as owned from the start
+   * (`startsUnlocked`). Called once per boot, before offline progression is settled, so a
+   * resumed session can earn from the first location immediately.
+   */
+  ensureDefaultUnlocks(reason = 'starts-unlocked'): readonly BuildingId[] {
+    const unlocked: BuildingId[] = [];
+    for (const building of this.content.getAllBuildings()) {
+      if (!building.startsUnlocked) continue;
+      if (this.unlock(building.id, reason)) unlocked.push(building.id);
+    }
+    return unlocked;
   }
 
   /** Unlocks every building whose content requirements are now satisfied. */

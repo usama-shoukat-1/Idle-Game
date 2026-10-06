@@ -65,6 +65,31 @@ export interface EventBusRegistry {
     readonly tier: number;
   };
   'upgrade:cancelled': { readonly upgradeId: string; readonly buildingId: string };
+  /** A running job was shortened (gems, rewarded ad, debug). */
+  'upgrade:speed-up': {
+    readonly upgradeId: string;
+    readonly source: 'gems' | 'ad' | 'debug';
+    /** Milliseconds actually removed. */
+    readonly appliedMs: number;
+  };
+  /** A building reached its final tier (drives the completion celebration). */
+  'building:completed': {
+    readonly buildingId: string;
+    readonly totalCost: number;
+    readonly incomePerMinute: number;
+  };
+
+  // --- Temporary boosts ----------------------------------------------------
+  'boost:applied': {
+    readonly boostId: string;
+    readonly kind: string;
+    readonly amount: number;
+    readonly expiresAt: number;
+    readonly source: string;
+    /** True when an already-running boost was extended instead of created. */
+    readonly extended: boolean;
+  };
+  'boost:expired': { readonly count: number };
 
   // --- Progression ---------------------------------------------------------
   'stage:unlocked': { readonly stageId: string };
@@ -75,6 +100,13 @@ export interface EventBusRegistry {
     readonly elapsedMs: number;
     readonly coins: number;
     readonly cappedAtMs: number;
+  };
+  /** The player collected the pending offline reward (`doubled` when a rewarded ad was used). */
+  'offline:collected': {
+    readonly coins: number;
+    readonly baseCoins: number;
+    readonly doubled: boolean;
+    readonly elapsedMs: number;
   };
 
   // --- Audio / UI / input --------------------------------------------------
@@ -88,12 +120,36 @@ export interface EventBusRegistry {
   'ui:toast': { readonly message: string; readonly variant?: 'info' | 'success' | 'warning' | 'error' };
 
   // --- Monetization (provider-independent) ---------------------------------
+  /** Emitted when the player explicitly opts in (before the provider is asked). */
+  'ads:reward-requested': { readonly placementId: string; readonly rewardId: string };
   'ads:reward-granted': {
     readonly placementId: string;
     readonly rewardId: string;
     readonly amount: number;
   };
+  'ads:reward-failed': {
+    readonly placementId: string;
+    readonly rewardId: string;
+    readonly status: string;
+  };
+  'purchase:started': { readonly productId: string };
   'purchase:completed': { readonly productId: string; readonly currency: string; readonly amount: number };
+  'purchase:failed': { readonly productId: string; readonly status: string };
+
+  // --- Tutorial ------------------------------------------------------------
+  'tutorial:step': { readonly stepId: string; readonly index: number; readonly total: number };
+  'tutorial:completed': { readonly skipped: boolean };
+
+  // --- Analytics -----------------------------------------------------------
+  /**
+   * Normalised, provider-independent analytics event. Gameplay code never talks to an
+   * SDK; an AnalyticsService implementation (dev console today, a real SDK later)
+   * subscribes here. See docs/DEVELOPMENT_RULES.md for the naming contract.
+   */
+  'analytics:track': {
+    readonly name: string;
+    readonly props: Readonly<Record<string, string | number | boolean>>;
+  };
 
   // --- Debug ---------------------------------------------------------------
   'debug:state-changed': { readonly summary: string };

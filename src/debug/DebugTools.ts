@@ -111,6 +111,85 @@ export class DebugTools {
     return statuses.length;
   }
 
+  /**
+   * Jumps a building straight to a tier (default: fully restored). Completed upgrades for
+   * the skipped tiers are marked too, otherwise the prerequisite chain would deadlock.
+   */
+  setBuildingTier(buildingId: string, tier: number): number {
+    if (!this.requireEnabled()) return 0;
+    const buildings = this.systems.buildings;
+    const upgrades = this.systems.upgrades;
+    const id = buildingId as never;
+
+    for (const upgrade of this.systems.content.getBuildingUpgrades(id)) {
+      if (upgrade.tier <= tier && !upgrades.isCompleted(upgrade.id)) {
+        // Complete through the engine so visual state, unlocks and events all fire.
+        const job = this.systems.state.upgrades.active[upgrade.id];
+        if (job) upgrades.completeNow(upgrade.id, 'debug.setTier');
+        else if (this.systems.economy.getCoins() >= 0) {
+          // Grant the coins this tier would cost so the tier advance is never blocked by
+          // the wallet (this is a cheat: no real currency is created for the player).
+          this.systems.economy.addCoins(upgrade.cost.amount, 'debug.tierGrant');
+          upgrades.start(upgrade.id);
+          upgrades.completeNow(upgrade.id, 'debug.setTier');
+        }
+      }
+    }
+
+    buildings.applyTier(id, tier, 'debug.setTier');
+    logger.info('debug', `building ${buildingId} forced to tier ${tier}`);
+    return buildings.getTier(id);
+  }
+
+  /** Rewinds `lastSaveAt` so the next settle produces an offline reward (QA of the popup). */
+  simulateOffline(awayMs = 90 * 60 * 1000): number {
+    if (!this.requireEnabled()) return 0;
+    const state = this.systems.state;
+    state.session.resumed = true;
+    state.session.lastSaveAt = this.clock.now() - awayMs;
+    state.analytics.lastSessionAt = state.session.lastSaveAt;
+    const summary = this.systems.offline.settle();
+    logger.info('debug', `simulated ${Math.round(awayMs / 60000)}m away -> ${summary.coins} coins`);
+    return summary.coins;
+  }
+
+  /** Skips every running timer forward by `amountMs` (income anchors included). */
+  advanceTime(amountMs: number): number {
+    if (!this.requireEnabled()) return 0;
+    const state = this.systems.state;
+    for (const entry of Object.values(state.buildings.entries)) {
+      entry.lastIncomeAt -= amountMs;
+    }
+    state.session.lastSaveAt -= amountMs;
+    const statuses = this.systems.timers.list();
+    for (const status of statuses) this.systems.timers.reduce(status.key, amountMs);
+    this.systems.timers.tick();
+    logger.info('debug', `advanced time by ${Math.round(amountMs / 1000)}s`);
+    return statuses.length;
+  }
+
+  /** Enables/disables the mock ad provider (availability only - never auto-plays). */
+  toggleMockAds(enabled?: boolean): boolean {
+    if (!this.requireEnabled()) return false;
+    const ads = this.systems.devProviders.ads;
+    if (!ads) return false;
+    const next = enabled ?? !ads.isEnabled;
+    ads.setEnabled(next);
+    logger.info('debug', `mock ads ${next ? 'enabled' : 'disabled'}`);
+    return next;
+  }
+
+  /** Enables/disables the mock store (returns the new state). */
+  toggleMockPurchases(enabled?: boolean): boolean {
+    if (!this.requireEnabled()) return false;
+    const store = this.systems.devProviders.store;
+    if (!store) return false;
+    const next = enabled ?? !store.isEnabled;
+    store.setEnabled(next);
+    logger.info('debug', `mock store ${next ? 'enabled' : 'disabled'}`);
+    return next;
+  }
+
   resetSave(options: { keepSettings?: boolean } = {}): void {
     if (!this.requireEnabled()) return;
     this.systems.save.reset(options);

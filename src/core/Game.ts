@@ -122,4 +122,4 @@ export function autoStart(): void {
 }
 
 /** Build version stamped into saves so a bug report can be tied to a build. */
-export const BUILD_VERSION = '0.1.0-phase0';
+export const BUILD_VERSION = '0.1.0-phase1';

@@ -68,6 +68,8 @@ export function createDefaultGameState(options: CreateStateOptions): GameState {
       stages: stageEntries,
       unlockedStageIds: stages.map((stage) => stage.id),
     },
+    boosts: { active: [] },
+    offline: { pending: null, lastCollectedAt: 0 },
     redevelopment: { level: 0, points: 0 },
     session: {
       startedAt: now,

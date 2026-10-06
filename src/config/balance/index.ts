@@ -15,12 +15,13 @@ import type { ContentRegistry } from '@/core/content/ContentRegistry';
  */
 export { ECONOMY_BALANCE } from '@/data/economy/balance';
 
-/** Numbers that are NOT yet tuned, with the intention recorded for Phase 1. */
+/** Honest notes about which numbers are tuned and which are still placeholders. */
 export const BALANCE_TUNING_NOTES = {
-  offlineEfficiency: 'Intentionally 0 in Phase 0: offline progression is wired but awards nothing until tuned.',
-  startingWallet: 'Placeholder starter coins/gems so the economy and HUD are observable during QA.',
-  acceleration: 'Placeholder gem-per-minute conversion for instant finishes.',
-  rewardedRewards: 'Placeholder amounts; real rewarded-ad economy is designed with retention data.',
+  restorationTable: 'Phase 1 Old Café tiers are set from the design brief and verified by tests (13,750 coins total).',
+  offlineEfficiency: 'Phase 1 pays 100% of the live rate, capped at 4 hours.',
+  startingWallet: '500 coins / 0 gems: enough for the first two (instant) restoration steps.',
+  acceleration: 'Placeholder monetisation balance (1 gem per remaining minute, minimum 1); not final.',
+  rewardedRewards: 'Phase 1 values (8% bonus coins clamped 50-500, 25% speed-up capped at 15 min, 2x/30 min boost).',
 } as const;
 
 /** Development-only overrides. Empty by design - add entries while tuning locally. */

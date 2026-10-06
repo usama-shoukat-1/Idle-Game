@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MemoryStorageDriver } from '@/services/storage/StorageDrivers';
-import { STORAGE_KEYS } from '@/core/constants/GameConstants';
+import { SAVE_SCHEMA_VERSION, STORAGE_KEYS } from '@/core/constants/GameConstants';
 import { computeElapsedMs, isPlausibleTimestamp } from '@/core/utils/TimeUtils';
 import { createDefaultGameState } from '@/systems/SaveSystem/GameStateFactory';
 import { createTestContent, createTestEnvironment, unlockTestBuilding } from './helpers/TestEnvironment';
@@ -89,12 +89,19 @@ describe('OfflineIncomeSystem', () => {
     env.dispose();
   });
 
-  it('tags offline income separately in the transaction journal', () => {
+  it('tags offline income separately in the transaction journal once collected', () => {
     const env = saveAndReopen(2 * 60 * 60 * 1000);
-    env.systems.offline.settle();
+    const summary = env.systems.offline.settle();
 
+    // Phase 1: settling only *calculates* - the coins arrive when the player collects.
+    expect(env.systems.offline.hasPending()).toBe(true);
+    const beforeCollect = env.systems.economy.getCoins();
+    const granted = env.systems.offline.collect();
+
+    expect(granted).toBe(summary.coins);
     const reasons = env.systems.economy.getRecentTransactions(20).map((entry) => entry.reason);
-    expect(reasons).toContain('offline.income');
+    expect(reasons).toContain('offline.collect');
+    expect(env.systems.economy.getCoins()).toBe(beforeCollect + granted);
     env.dispose();
   });
 
@@ -117,27 +124,57 @@ describe('OfflineIncomeSystem', () => {
     second.dispose();
   });
 
-  it('settling twice does not double-pay', () => {
+  it('settling twice does not double-pay (the same gap is never counted twice)', () => {
     const env = saveAndReopen(2 * 60 * 60 * 1000);
     const first = env.systems.offline.settle();
+    const pendingAfterFirst = env.systems.offline.getPending();
+    const granted = env.systems.offline.collect();
     const coinsAfterFirst = env.systems.economy.getCoins();
 
     env.clock.advance(1_000);
     const second = env.systems.offline.settle();
 
     expect(first.skipped).toBe(false);
+    expect(pendingAfterFirst?.coins).toBe(granted);
+    // The second settle sees a fresh anchor, so it produces nothing to collect.
     expect(second.coins).toBe(0);
+    expect(env.systems.offline.hasPending()).toBe(false);
     expect(env.systems.economy.getCoins()).toBe(coinsAfterFirst);
     env.dispose();
   });
 
-  it('preview() computes without granting', () => {
+  it('never pays the same offline interval twice, even across a reload', () => {
+    const env = saveAndReopen(2 * 60 * 60 * 1000);
+    env.systems.offline.settle();
+    const pending = env.systems.offline.getPending();
+    expect(pending).not.toBeNull();
+
+    // Reload *before* collecting: the pending reward is part of the save...
+    env.systems.save.save('mid-popup');
+    const reloaded = createTestEnvironment({ storage: env.storage, content: env.content });
+    expect(reloaded.systems.offline.getPending()?.coins).toBe(pending?.coins);
+
+    // ...and is gone once collected, so a second reload cannot re-pay it.
+    const granted = reloaded.systems.offline.collect();
+    reloaded.systems.save.save('collected');
+    const third = createTestEnvironment({ storage: env.storage, content: env.content });
+    expect(third.systems.offline.getPending()).toBeNull();
+    expect(third.systems.offline.collect()).toBe(0);
+    expect(granted).toBeGreaterThan(0);
+
+    env.dispose();
+    reloaded.dispose();
+    third.dispose();
+  });
+
+  it('preview() computes without granting or storing anything', () => {
     const env = saveAndReopen(3 * 60 * 60 * 1000);
     const before = env.systems.economy.getCoins();
     const preview = env.systems.offline.preview();
 
     expect(preview.coins).toBeGreaterThan(0);
     expect(env.systems.economy.getCoins()).toBe(before);
+    expect(env.systems.offline.getPending()).toBeNull();
     env.dispose();
   });
 
@@ -150,7 +187,7 @@ describe('OfflineIncomeSystem', () => {
     const storage = new MemoryStorageDriver();
     storage.write(
       STORAGE_KEYS.save,
-      JSON.stringify({ schemaVersion: 1, savedAt: now, gameVersion: 'test', state }),
+      JSON.stringify({ schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now, gameVersion: 'test', state }),
     );
 
     const env = createTestEnvironment({ storage, now });

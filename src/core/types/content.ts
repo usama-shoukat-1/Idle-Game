@@ -92,6 +92,11 @@ export interface BuildingDefinition {
   /** Visual state catalog for this building, keyed by `visualState`. */
   readonly visualStates: readonly VisualStateDefinition[];
   readonly unlockRequirements: readonly UnlockRequirement[];
+  /**
+   * True for content the player owns from the first session (the first location and any
+   * "already yours" building). Contrast with `unlockRequirements`, which gate the rest.
+   */
+  readonly startsUnlocked?: boolean;
   readonly synergyRules: readonly SynergyRule[];
   /** Optional placeholder texture keys for Phase 0-style flat rendering. */
   readonly placeholder?: {
@@ -125,6 +130,27 @@ export interface UpgradeDefinition {
     /** Allow an opt-in rewarded ad to reduce the remaining time. */
     readonly rewardedTimeSkip?: boolean;
   };
+}
+
+/**
+ * One onboarding hint. Steps are ordered and independent of the systems that satisfy
+ * them: `advanceOn` names a domain event ("upgrade:completed") so the tutorial never
+ * contains gameplay logic. Omit `advanceOn` for a step the player acknowledges manually.
+ */
+export interface TutorialStepDefinition {
+  readonly id: string;
+  /** Short imperative line shown in the hint banner. */
+  readonly message: string;
+  /** Optional second line with the "why". */
+  readonly detail?: string;
+  /** Domain event that advances this step (see EventBusRegistry). */
+  readonly advanceOn?: string;
+  /** Optional payload filter, e.g. { tier: 2 } to advance only for one tier. */
+  readonly advanceWhen?: Readonly<Record<string, string | number>>;
+  /** Presentation hint: which control to highlight ('restore' | 'ad' | 'currency' | 'none'). */
+  readonly highlight?: string;
+  /** Require an explicit tap instead of an event (explanatory steps). */
+  readonly requireAcknowledge?: boolean;
 }
 
 /** A district groups stages under one city area and owns its theme/palette. */
@@ -186,6 +212,25 @@ export interface EconomyBalanceConfig {
   readonly rewardedRewards: readonly RewardedRewardDefinition[];
 }
 
+/**
+ * Rewards whose amount depends on live game state ("8% of the next restoration cost",
+ * "25% of the remaining timer") are described here rather than hard-coded, so balancing
+ * them stays a content change. The resolver lives in AdRewardSystem.
+ */
+export type DynamicRewardSpec =
+  | {
+      readonly kind: 'percentOfNextUpgradeCost';
+      readonly percent: number;
+      readonly minAmount: number;
+      readonly maxAmount: number;
+    }
+  | {
+      readonly kind: 'percentOfRemainingUpgradeTime';
+      readonly percent: number;
+      /** Hard ceiling per single rewarded view (e.g. 15 minutes). */
+      readonly maxAmount: DurationMs;
+    };
+
 export type RewardedRewardKind =
   | 'coins'
   | 'gems'
@@ -196,8 +241,17 @@ export type RewardedRewardKind =
 export interface RewardedRewardDefinition {
   readonly id: string;
   readonly kind: RewardedRewardKind;
-  /** Amount semantics depend on `kind` (coins, gems, ms skipped, multiplier, percent). */
+  /**
+   * Amount semantics depend on `kind` (coins, gems, ms skipped, multiplier, percent).
+   * Used as the granted value unless `dynamic` is present.
+   */
   readonly amount: number;
+  /** Computed from live state when present (overrides `amount`). */
+  readonly dynamic?: DynamicRewardSpec;
+  /** Active duration for effect rewards (income boosts). Instant rewards ignore it. */
+  readonly durationMs?: DurationMs;
+  /** Player-facing action label, e.g. "WATCH AD → SPEED UP". */
+  readonly actionLabel?: string;
   /** Cooldown before the same reward can be requested again. */
   readonly cooldownMs: DurationMs;
   readonly displayName: string;

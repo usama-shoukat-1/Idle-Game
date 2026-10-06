@@ -18,6 +18,7 @@ import { makeText } from '@/ui/theme/UiTheme';
 export interface TopBarOptions {
   readonly events: EventBus;
   readonly onMenuPress?: () => void;
+  readonly onGemsPress?: () => void;
   readonly menuIcon?: string;
   readonly title?: string;
 }
@@ -38,7 +39,13 @@ export class TopBar extends Widget {
     });
 
     this.coins = new CurrencyChip(scene, { kind: 'coins', events: topBarOptions.events, anchorX: 'left', anchorY: 'top' });
-    this.gems = new CurrencyChip(scene, { kind: 'gems', events: topBarOptions.events, anchorX: 'left', anchorY: 'top' });
+    this.gems = new CurrencyChip(scene, {
+      kind: 'gems',
+      events: topBarOptions.events,
+      anchorX: 'left',
+      anchorY: 'top',
+      onPress: topBarOptions.onGemsPress,
+    });
 
     // The chips are positioned manually inside this bar's own coordinate space, so their
     // independent anchoring is bypassed in `layout()`.

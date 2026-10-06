@@ -15,9 +15,9 @@ import type { StoreCatalogEntry } from '@/systems/PurchaseSystem/PurchaseSystem'
 export interface FeatureFlags {
   /** Debug tools (cheats, state inspector, FPS). Release builds must ship `false`. */
   readonly debugTools: boolean;
-  /** Rewarded ads. Phase 0 has no ad provider wired to a real network. */
+  /** Rewarded ads. Phase 1 wires the opt-in flow to a MOCK provider only. */
   readonly rewardedAds: boolean;
-  /** In-app purchases. Phase 0 has no billing provider and an empty catalog. */
+  /** In-app purchases. Phase 1 ships a MOCK store with a development gem catalog. */
   readonly purchases: boolean;
   /** Grid/line diagnostics: draw the design frame and touch targets. */
   readonly layoutDebugOverlay: boolean;
@@ -29,25 +29,63 @@ export interface FeatureFlags {
  */
 export const FEATURE_FLAGS: FeatureFlags = {
   debugTools: import.meta.env?.DEV ?? false,
-  rewardedAds: false,
-  purchases: false,
+  /**
+   * Phase 1 ships OPT-IN rewarded ads against the mock provider: the flow, cooldowns,
+   * analytics and rewards are real, the network is not. Flipping this off hides every ad
+   * affordance without touching gameplay code.
+   */
+  rewardedAds: true,
+  /** Same story for the store: a mock provider and a development gem catalog. */
+  purchases: true,
   layoutDebugOverlay: false,
 };
 
 /**
  * STORE CATALOG
  * =============
- * Phase 0 is intentionally EMPTY: no product id exists in the codebase, and the mock
- * store reports no products, so the UI renders its "store unavailable" state.
+ * Development catalog: the mock store reports these three products. No real product id is
+ * ever referenced - see docs/MONETIZATION_ARCHITECTURE.md.
  *
- * A future entry looks like:
- *   { productId: 'gems.small', displayName: 'Pouch of Gems', description: '...',
- *     kind: 'consumable', grants: { gems: 100 } }
+/**
+ * PHASE 1 DEVELOPMENT CATALOG (MOCK ONLY)
+ * ======================================
+ * Three gem packs the mock store offers so the purchase flow, the entitlement bookkeeping
+ * and the gem economy can be exercised end to end. The `productId`s are the game's own
+ * keys; the platform SKU (and the real price) is resolved by the provider - which is why
+ * no App Store / Play Store identifier appears anywhere in this repository.
  *
- * The `productId` here is the game's own key. Mapping it to a platform SKU is the
- * provider's job (`PurchaseService`), which is why no store id appears in game code.
+ * These are NOT final commercial values (see docs/MONETIZATION_ARCHITECTURE.md).
  */
-export const STORE_CATALOG: readonly StoreCatalogEntry[] = [];
+export const STORE_CATALOG: readonly StoreCatalogEntry[] = [
+  {
+    productId: 'gems.small',
+    displayName: 'Handful of Gems',
+    description: 'A small pouch of gems for instant finishes.',
+    kind: 'consumable',
+    grants: { gems: 100 },
+  },
+  {
+    productId: 'gems.medium',
+    displayName: 'Bag of Gems',
+    description: 'A tidy bag of gems, best value for mid-game upgrades.',
+    kind: 'consumable',
+    grants: { gems: 600 },
+  },
+  {
+    productId: 'gems.large',
+    displayName: 'Crate of Gems',
+    description: 'A whole crate of gems for players who never want to wait.',
+    kind: 'consumable',
+    grants: { gems: 1500 },
+  },
+];
+
+/** Mock price labels shown while the store is a development stub. */
+export const MOCK_STORE_PRICES: Readonly<Record<string, string>> = {
+  'gems.small': 'mock · 99¢',
+  'gems.medium': 'mock · $4.99',
+  'gems.large': 'mock · $9.99',
+};
 
 /** Entitlement names the game understands (used by future remove-ads / premium gates). */
 export const ENTITLEMENTS = {

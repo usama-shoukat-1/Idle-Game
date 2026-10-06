@@ -11,7 +11,7 @@ import { createTestContent } from './helpers/TestEnvironment';
  * data-only operation (the registry, not the systems, is where content knowledge lives).
  */
 describe('ContentRegistry', () => {
-  it('loads the shipped Phase 0 content without errors', () => {
+  it('loads the shipped content without validation errors', () => {
     const registry = new ContentRegistry();
     expect(() => registry.load(DEFAULT_CONTENT)).not.toThrow();
 
@@ -20,9 +20,17 @@ describe('ContentRegistry', () => {
     expect(registry.isLoaded).toBe(true);
     expect(registry.getAllStages().length).toBeGreaterThan(0);
     expect(registry.getAllDistricts().length).toBeGreaterThan(0);
-    // Phase 0 intentionally ships no buildings or upgrades.
-    expect(registry.getAllBuildings()).toHaveLength(0);
-    expect(registry.getAllUpgrades()).toHaveLength(0);
+
+    // Phase 1 ships exactly one playable building (the Old Café) with its ten tiers, and
+    // the tutorial that teaches it. Everything else is still content-free by design.
+    expect(registry.getAllBuildings()).toHaveLength(1);
+    expect(registry.getAllUpgrades()).toHaveLength(10);
+    expect(registry.getTutorialSteps().length).toBeGreaterThan(0);
+
+    const cafe = registry.getAllBuildings()[0];
+    expect(cafe?.id).toBe('building_old_cafe');
+    expect(registry.getMaxTier(cafe!.id)).toBe(10);
+    expect(registry.getBuildingUpgrades(cafe!.id)).toHaveLength(10);
   });
 
   it('rejects duplicate ids', () => {

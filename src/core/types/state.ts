@@ -76,6 +76,65 @@ export interface UpgradesState {
   completed: UpgradeId[];
 }
 
+/**
+ * A temporary effect with a deadline. Like every timer in the game it stores epoch
+ * timestamps, never a countdown that could drift while the browser is suspended.
+ */
+export type BoostKind = 'incomeMultiplier';
+
+export interface BoostState {
+  readonly id: string;
+  readonly kind: BoostKind;
+  /** Effect strength while active (2 === doubled income). */
+  readonly amount: number;
+  readonly startedAt: number;
+  /** Epoch ms when the effect stops applying. Mutated only to extend a running boost. */
+  expiresAt: number;
+  /** Origin of the boost, for analytics: 'ads' | 'debug' | 'content'. */
+  readonly source: string;
+  /** Short player-facing label shown in the HUD ("2× income"). */
+  readonly label: string;
+}
+
+export interface BoostsState {
+  active: BoostState[];
+}
+
+/** One building's share of a pending offline payout (breakdown for the UI). */
+export interface OfflineBreakdownEntry {
+  readonly buildingId: BuildingId;
+  readonly coins: number;
+  readonly elapsedMs: number;
+}
+
+/**
+ * Offline earnings that have been *calculated* but not yet granted.
+ *
+ * Persisting the pending reward (rather than paying out during load) is what makes the
+ * offline popup honest: a reload before collecting still shows the same single reward,
+ * and the reward can never be granted twice because collecting clears it.
+ */
+export interface PendingOfflineReward {
+  readonly coins: number;
+  /** Raw gap between the last save and this session, before clamping. */
+  readonly elapsedMs: number;
+  /** Gap actually paid for (after validation + the content cap). */
+  readonly effectiveElapsedMs: number;
+  readonly capped: boolean;
+  readonly computedAt: number;
+  readonly anchorAt: number;
+  readonly perBuilding: readonly OfflineBreakdownEntry[];
+  /** True once the player doubled it with a rewarded ad (cannot be boosted twice). */
+  readonly boosted: boolean;
+}
+
+export interface OfflineState {
+  /** Reward waiting to be collected, or null. */
+  pending: PendingOfflineReward | null;
+  /** Epoch ms of the last successful collection (analytics + duplicate guard). */
+  lastCollectedAt: number;
+}
+
 export interface WorkerRuntimeState {
   id: WorkerId;
   unlocked: boolean;
@@ -153,6 +212,8 @@ export interface GameState {
   upgrades: UpgradesState;
   workers: WorkersState;
   progression: ProgressionState;
+  boosts: BoostsState;
+  offline: OfflineState;
   redevelopment: RedevelopmentState;
   session: SessionState;
   analytics: AnalyticsState;
@@ -169,6 +230,10 @@ export const STATE_LIMITS = {
   maxCurrencyValue: 1e21,
   /** Elapsed time beyond this is clamped (implied by design). 14 days. */
   maxOfflineDurationMs: 14 * 24 * 60 * MS_PER_MINUTE,
+  /** Upper bound on simultaneously active boosts; extra ones are dropped on load. */
+  maxActiveBoosts: 16,
+  /** Longest single offline reward that may be stored as pending (2x the usual cap). */
+  maxPendingOfflineCoins: 1e15,
 } as const;
 
 export type { RuntimeSnapshot };

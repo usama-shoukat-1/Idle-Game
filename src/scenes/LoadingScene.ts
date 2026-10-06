@@ -55,13 +55,18 @@ export class LoadingScene extends Phaser.Scene {
       logger.info('scene', `${rehydrated.completedOffline} upgrade(s) completed while away`);
     }
 
-    // 2. Offline progression. Phase 0 records the elapsed time and (because efficiency is
-    //    0) awards nothing; the summary is kept so the UI can show it once tuned.
+    // 2. The first location is owned from the start: unlock it before offline maths runs,
+    //    otherwise a returning player would miss the earnings from it.
+    context.systems.buildings.ensureDefaultUnlocks();
+
+    // 3. Offline progression. The reward is *calculated* here and shown as a pending
+    //    summary in the game scene, where the player collects it (with an optional
+    //    "watch an ad to double it" choice).
     const summary = context.systems.offline.settle();
     this.registry.set(REGISTRY_KEYS.offlineSummary, summary);
     this.registry.set(REGISTRY_KEYS.gameReady, true);
 
-    // 3. Progression/unlock refresh so the menu reflects the latest save.
+    // 4. Progression/unlock refresh so the menu reflects the latest save.
     context.systems.progression.refreshUnlocks('loading');
 
     this.statusText.setText(this.describe(summary));
@@ -91,7 +96,7 @@ export class LoadingScene extends Phaser.Scene {
     }
     const minutes = Math.round(summary.effectiveElapsedMs / 60_000);
     if (summary.coins > 0) {
-      return `You were away ${minutes}m — ${summary.coins} coins earned`;
+      return `You were away ${minutes}m — ${summary.coins} coins waiting for you`;
     }
     return `You were away ${minutes}m`;
   }

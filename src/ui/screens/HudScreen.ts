@@ -18,18 +18,21 @@ import { UI_THEME, makeText } from '@/ui/theme/UiTheme';
  * pause/menu affordance. It is intentionally thin - it reads state and emits intents
  * (via callbacks) and contains no gameplay logic.
  *
- * `setIncomePerSecond` / `setSelectedBuilding` are called by the scene when something
- * changes; the HUD never polls systems in a frame loop except for its one live timer line.
+ * `setBusinessName` / `setIncomePerSecond` are called by the scene when something changes;
+ * the HUD never polls systems in a frame loop except for its one live timer line.
  */
 export interface HudScreenOptions {
   readonly services: UiServices;
   readonly onMenuPress: () => void;
   readonly onSelectBuilding?: (buildingId: BuildingId) => void;
+  /** Tap on the gem counter (opens the shop). */
+  readonly onGemsPress?: () => void;
 }
 
 export class HudScreen extends Screen {
   private readonly services: UiServices;
   private readonly topBar: TopBar;
+  private readonly businessText: Phaser.GameObjects.Text;
   private readonly incomeText: Phaser.GameObjects.Text;
   private readonly statusText: Phaser.GameObjects.Text;
   private readonly hintText: Phaser.GameObjects.Text;
@@ -41,10 +44,13 @@ export class HudScreen extends Screen {
     this.topBar = new TopBar(scene, {
       events: options.services.events,
       onMenuPress: options.onMenuPress,
+      onGemsPress: options.onGemsPress,
       menuIcon: '☰',
     });
     this.container.add(this.topBar.container);
 
+    this.businessText = makeText(scene, '', { size: 'tiny', bold: true, align: 'center' });
+    this.businessText.setOrigin(0.5, 0);
     this.incomeText = makeText(scene, '', { size: 'tiny', color: UI_THEME.css.accent, align: 'center' });
     this.incomeText.setOrigin(0.5, 0);
     this.statusText = makeText(scene, '', { size: 'micro', color: UI_THEME.css.textMuted, align: 'center' });
@@ -56,7 +62,7 @@ export class HudScreen extends Screen {
     });
     this.hintText.setOrigin(0.5, 1);
 
-    this.container.add([this.incomeText, this.statusText, this.hintText]);
+    this.container.add([this.businessText, this.incomeText, this.statusText, this.hintText]);
 
     this.topBar.coins.setValue(options.services.systems.economy.getCoins());
     this.topBar.gems.setValue(options.services.systems.economy.getGems());
@@ -66,8 +72,9 @@ export class HudScreen extends Screen {
     this.topBar.applyLayout(handle);
     // The top bar is placed by its own anchors; the labels follow beneath it.
     this.topBar.container.setPosition(this.centerX(), this.topBarContainerY());
-    this.incomeText.setPosition(this.centerX(), this.top(SPACING.xxxl + SPACING.xxl + SPACING.xs));
-    this.statusText.setPosition(this.centerX(), this.top(SPACING.xxxl + SPACING.xxl + SPACING.xxl));
+    this.businessText.setPosition(this.centerX(), this.top(SPACING.xxxl + SPACING.xxl));
+    this.incomeText.setPosition(this.centerX(), this.top(SPACING.xxxl + SPACING.xxl + SPACING.xs + 30));
+    this.statusText.setPosition(this.centerX(), this.top(SPACING.xxxl + SPACING.xxl + SPACING.xxl + 30));
     this.hintText.setPosition(this.centerX(), this.bottom(SPACING.xxl));
   }
 
@@ -75,12 +82,21 @@ export class HudScreen extends Screen {
     return this.top(SPACING.md + 31);
   }
 
-  setIncomePerSecond(coinsPerSecond: number): void {
+  /**
+   * Income line. Takes the rate in coins/second (the system's unit) and renders the
+   * player-facing coins per minute, so no scene does unit conversion by hand.
+   */
+  setIncomePerSecond(coinsPerSecond: number, suffix = ''): void {
     this.incomeText.setText(
       coinsPerSecond > 0
-        ? `${formatCompactNumber(coinsPerSecond * 60)} coins / min`
-        : 'No income yet — Phase 0 ships no buildings',
+        ? `${formatCompactNumber(coinsPerSecond * 60)} Coins/min${suffix}`
+        : 'Not earning yet',
     );
+  }
+
+  /** Business line ("Old Café · Tier 3 / 10"), written on the scene's throttled refresh. */
+  setBusinessName(text: string): void {
+    if (this.businessText.text !== text) this.businessText.setText(text);
   }
 
   setStatus(text: string): void {
@@ -91,12 +107,16 @@ export class HudScreen extends Screen {
     this.hintText.setText(text);
   }
 
-  /** Shows the running upgrade timer for the current selection, if any. */
+  /** Shows the live status line (upgrade timer, or the idle state). */
   override update(): void {
     const systems = this.services.systems;
     const job = systems.upgrades.getPrimaryActiveJob();
     if (!job) {
-      this.setStatus(`Save autosaves · ${formatCompactNumber(systems.economy.getCoins())} coins in wallet`);
+      this.setStatus(
+        systems.buildings.getTotalIncomePerMinute() > 0
+          ? 'Earning while you are here and while you are away'
+          : `Save autosaves · ${formatCompactNumber(systems.economy.getCoins())} coins in wallet`,
+      );
       return;
     }
     this.setStatus(`${formatDuration(systems.upgrades.getRemainingMs(job.upgradeId))} until upgrade completes`);

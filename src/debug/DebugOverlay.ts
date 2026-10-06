@@ -21,11 +21,20 @@ export interface DebugOverlayOptions {
   readonly showState?: boolean;
 }
 
+/**
+ * Keyboard cheat sheet. Development only - it is rendered by the debug overlay, which is
+ * never constructed in a release build.
+ */
+export const DEBUG_KEY_LEGEND =
+  'F1 overlay   F2 +1,000 coins   F3 +50 gems   F4 café tier +1   F5 finish upgrade\n' +
+  'F6 reset save   F7 simulate offline   F8 mock ads on/off   F9 +60s   F10 mock store on/off';
+
 export class DebugOverlay extends Screen {
   private readonly tools: DebugTools;
   private readonly clock: GameClock;
   private readonly fpsText: Phaser.GameObjects.Text;
   private readonly stateText: Phaser.GameObjects.Text;
+  private readonly hintText: Phaser.GameObjects.Text;
   private frames = 0;
   private lastSampleAt = 0;
   private fps = 0;
@@ -45,13 +54,36 @@ export class DebugOverlay extends Screen {
       wordWrapWidth: 660,
     });
     this.stateText.setOrigin(0, 0);
+    this.hintText = makeText(scene, DEBUG_KEY_LEGEND, {
+      size: 'micro',
+      color: UI_THEME.css.textMuted,
+      wordWrapWidth: 660,
+    });
+    this.hintText.setOrigin(0, 0);
 
-    this.container.add([this.fpsText, this.stateText]);
+    this.container.add([this.fpsText, this.stateText, this.hintText]);
     this.lastSampleAt = this.clock.monotonic();
   }
 
   get isEnabled(): boolean {
     return this.tools.enabled;
+  }
+
+  get isVisible(): boolean {
+    return this.container.visible;
+  }
+
+  /** F1: show/hide the overlay (no-op when the build has no debug tools). */
+  toggle(): boolean {
+    if (!this.tools.enabled) return false;
+    this.setVisible(!this.container.visible);
+    return this.container.visible;
+  }
+
+  /** Forces an immediate state-summary refresh (used after a cheat). */
+  refresh(): void {
+    if (!this.tools.enabled) return;
+    if (this.showState) this.stateText.setText(this.tools.stateSummary());
   }
 
   toggleState(): boolean {
@@ -79,9 +111,12 @@ export class DebugOverlay extends Screen {
   }
 
   protected override layout(_handle: LayoutHandle): void {
+    const frameBottom = this.bottom(0);
     this.fpsText.setPosition(this.left(SPACING.sm), this.top(SPACING.sm));
     this.stateText.setPosition(this.left(SPACING.sm), this.top(SPACING.sm + 52));
     this.stateText.setVisible(this.showState && this.tools.enabled);
+    // The key legend sits at the bottom of the screen so it never covers the HUD.
+    this.hintText.setPosition(this.left(SPACING.sm), frameBottom - 120);
   }
 
   refreshNow(): void {

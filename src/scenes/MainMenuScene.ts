@@ -13,6 +13,7 @@ import { ToastLayer } from '@/ui/components/ToastLayer';
 import { SettingsScreen } from '@/ui/screens/SettingsScreen';
 import { UI_THEME, makeText } from '@/ui/theme/UiTheme';
 import { setTextIfChanged } from '@/ui/utils/TextUtils';
+import type { GameState } from '@/core/types/state';
 
 /**
  * MAIN MENU
@@ -182,27 +183,31 @@ class MenuScreen extends Screen {
 
     const buildStamp = import.meta.env?.MODE ?? 'unknown';
     const state = this.services.systems.state;
-    this.saveInfo.setText(
-      [
-        `Stage: ${state.progression.currentStageId}`,
-        `Wallet: ${formatCompactNumber(state.wallet.coins)} coins · ${formatCompactNumber(state.wallet.gems)} gems`,
-        `Last save: ${formatRelative(state.session.lastSaveAt, this.services.systems.clock.now())}`,
-      ].join('\n'),
-    );
+    this.saveInfo.setText(this.describeSave(state));
     this.statusText.setText(
-      `build ${buildStamp} · schema v${state.schemaVersion} · ${this.services.systems.storage.name} · Phase 0 foundation`,
+      `build ${buildStamp} · schema v${state.schemaVersion} · Phase 1 — Old Café vertical slice`,
     );
   }
 
   override update(_time: number, _delta: number): void {
-    const state = this.services.systems.state;
-    setTextIfChanged(
-      this.saveInfo,
-      [
-        `Stage: ${state.progression.currentStageId}`,
-        `Wallet: ${formatCompactNumber(state.wallet.coins)} coins · ${formatCompactNumber(state.wallet.gems)} gems`,
-        `Last save: ${formatRelative(state.session.lastSaveAt, this.services.systems.clock.now())}`,
-      ].join('\n'),
-    );
+    setTextIfChanged(this.saveInfo, this.describeSave(this.services.systems.state));
+  }
+
+  /** Player-facing progress summary for the menu (and a quick QA readout). */
+  private describeSave(state: GameState): string {
+    const systems = this.services.systems;
+    const progress = systems.content
+      .getAllBuildings()
+      .map(
+        (building) =>
+          `${building.displayName}: tier ${systems.buildings.getTier(building.id)}/${systems.buildings.getMaxTier(building.id)}`,
+      )
+      .join(' · ');
+
+    return [
+      progress.length > 0 ? progress : 'No buildings registered yet',
+      `Wallet: ${formatCompactNumber(state.wallet.coins)} coins · ${formatCompactNumber(state.wallet.gems)} gems`,
+      `Last save: ${formatRelative(state.session.lastSaveAt, systems.clock.now())}`,
+    ].join('\n');
   }
 }

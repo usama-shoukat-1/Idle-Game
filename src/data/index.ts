@@ -4,6 +4,7 @@ import { UPGRADES } from './upgrades';
 import { WORKERS } from './workers';
 import { DISTRICTS, STAGES } from './districts/district_01_old_town';
 import { ECONOMY_BALANCE } from './economy/balance';
+import { TUTORIAL_OLD_CAFE } from './tutorial/old_cafe_tutorial';
 
 export { BUILDINGS } from './buildings';
 export { UPGRADES } from './upgrades';
@@ -11,6 +12,7 @@ export { WORKERS } from './workers';
 export { DISTRICTS, STAGES, DISTRICT_IDS, STAGE_IDS, DEFAULT_STAGE_ID } from './districts/district_01_old_town';
 export { ECONOMY_BALANCE } from './economy/balance';
 export { GAME_EVENTS, type GameEventScheduleDefinition } from './events';
+export { TUTORIAL_OLD_CAFE } from './tutorial/old_cafe_tutorial';
 
 /**
  * THE content bundle.
@@ -26,4 +28,5 @@ export const DEFAULT_CONTENT: ContentBundle = {
   upgrades: UPGRADES,
   workers: WORKERS,
   economy: ECONOMY_BALANCE,
+  tutorialSteps: TUTORIAL_OLD_CAFE,
 };

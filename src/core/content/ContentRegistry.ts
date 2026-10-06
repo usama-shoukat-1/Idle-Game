@@ -5,6 +5,7 @@ import type {
   EconomyBalanceConfig,
   RewardedRewardDefinition,
   StageDefinition,
+  TutorialStepDefinition,
   UpgradeDefinition,
   WorkerDefinition,
 } from '@/core/types/content';
@@ -30,6 +31,11 @@ export interface ContentBundle {
   readonly upgrades: readonly UpgradeDefinition[];
   readonly workers: readonly WorkerDefinition[];
   readonly economy: EconomyBalanceConfig;
+  /**
+   * Optional onboarding steps, in order. Content, not code: the tutorial system walks the
+   * list and needs no knowledge of the building being explained.
+   */
+  readonly tutorialSteps?: readonly TutorialStepDefinition[];
 }
 
 export const EMPTY_ECONOMY_BALANCE: EconomyBalanceConfig = {
@@ -55,6 +61,7 @@ export class ContentRegistry {
   private readonly stages = new Map<StageId, StageDefinition>();
   private readonly districts = new Map<string, DistrictDefinition>();
   private readonly workers = new Map<WorkerId, WorkerDefinition>();
+  private tutorialSteps: readonly TutorialStepDefinition[] = [];
   private economy: EconomyBalanceConfig = EMPTY_ECONOMY_BALANCE;
   private loaded = false;
 
@@ -77,6 +84,7 @@ export class ContentRegistry {
     for (const worker of bundle.workers) this.registerWorker(worker);
 
     this.economy = bundle.economy;
+    this.tutorialSteps = bundle.tutorialSteps ?? [];
     this.loaded = true;
 
     const report = this.validate();
@@ -175,6 +183,15 @@ export class ContentRegistry {
 
   getEconomyBalance(): EconomyBalanceConfig {
     return this.economy;
+  }
+
+  /** Ordered onboarding steps (empty when the build ships no tutorial). */
+  getTutorialSteps(): readonly TutorialStepDefinition[] {
+    return this.tutorialSteps;
+  }
+
+  getTutorialStep(id: string): TutorialStepDefinition | undefined {
+    return this.tutorialSteps.find((step) => step.id === id);
   }
 
   /**
@@ -290,7 +307,8 @@ export class ContentRegistry {
           .expect(tier.tier === index, tierPath, `tier must equal its index (expected ${index}, got ${tier.tier})`)
           .expect(tier.cost.amount >= 0, `${tierPath}.cost`, 'cost must be >= 0')
           .expect(tier.durationMs >= 0, `${tierPath}.duration`, 'duration must be >= 0')
-          .expect(tier.incomeMultiplier > 0, `${tierPath}.incomeMultiplier`, 'must be > 0')
+          // >= 0: the first restoration step of a building may legitimately earn nothing.
+          .expect(tier.incomeMultiplier >= 0, `${tierPath}.incomeMultiplier`, 'must be >= 0')
           .expect(visualStates.has(tier.visualState), `${tierPath}.visualState`, `unknown visual state "${tier.visualState}"`);
         for (const prerequisite of tier.prerequisites) {
           result.expect(
@@ -325,7 +343,8 @@ export class ContentRegistry {
         .expect(this.buildings.has(upgrade.targetBuildingId), path, `targets unknown building "${upgrade.targetBuildingId}"`)
         .expect(upgrade.cost.amount >= 0, `${path}.cost`, 'cost must be >= 0')
         .expect(upgrade.durationMs >= 0, `${path}.durationMs`, 'durationMs must be >= 0')
-        .expect(upgrade.incomeMultiplier > 0, `${path}.incomeMultiplier`, 'must be > 0');
+        // >= 0: a restoration step may legitimately produce no income yet (tier 1).
+        .expect(upgrade.incomeMultiplier >= 0, `${path}.incomeMultiplier`, 'must be >= 0');
 
       const target = this.buildings.get(upgrade.targetBuildingId);
       if (target) {
@@ -373,6 +392,15 @@ export class ContentRegistry {
       result.expect(worker.hireCost.amount >= 0, `worker.${worker.id}`, 'hireCost must be >= 0');
     }
 
+    const tutorialIds = new Set<string>();
+    for (const step of this.tutorialSteps) {
+      result
+        .expect(step.id.length > 0, 'tutorial.step', 'id must not be empty')
+        .expect(step.message.length > 0, `tutorial.${step.id}`, 'message must not be empty')
+        .expect(!tutorialIds.has(step.id), `tutorial.${step.id}`, 'duplicate step id');
+      tutorialIds.add(step.id);
+    }
+
     return result;
   }
 
@@ -382,6 +410,7 @@ export class ContentRegistry {
     this.stages.clear();
     this.districts.clear();
     this.workers.clear();
+    this.tutorialSteps = [];
     this.economy = EMPTY_ECONOMY_BALANCE;
     this.loaded = false;
   }

@@ -71,7 +71,12 @@ describe('game session lifecycle', () => {
     expect(summary.skipped).toBe(false);
     expect(summary.elapsedMs).toBe(6 * HOUR);
     expect(summary.coins).toBeGreaterThan(0);
-    expect(second.systems.economy.getCoins()).toBe(coinsAtEndOfSession1 + summary.coins);
+
+    // Phase 1: offline earnings become a pending reward that the player collects from the
+    // summary popup (which is also where the opt-in "watch ad to double" lives).
+    const granted = second.systems.offline.collect();
+    expect(granted).toBe(summary.coins);
+    expect(second.systems.economy.getCoins()).toBe(coinsAtEndOfSession1 + granted);
 
     // The save file knows when the session ended, which is what offline maths depends on.
     expect(second.systems.save.getLastSavedAt()).not.toBeNull();

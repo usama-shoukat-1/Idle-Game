@@ -1,4 +1,5 @@
 import type { BuildingDefinition } from '@/core/types/content';
+import { BUILDING_OLD_CAFE } from './building_old_cafe';
 
 /**
  * BUILDING CONTENT
@@ -25,4 +26,10 @@ import type { BuildingDefinition } from '@/core/types/content';
  *     synergyRules: [],
  *   }
  */
-export const BUILDINGS: readonly BuildingDefinition[] = [];
+export const BUILDINGS: readonly BuildingDefinition[] = [
+  // Phase 1: the first playable building. Adding the next one is a single line here plus
+  // its own data file - no system, scene or UI code changes.
+  BUILDING_OLD_CAFE,
+];
+
+export { BUILDING_OLD_CAFE, BUILDING_IDS, OLD_CAFE_TIERS, OLD_CAFE_VISUAL_STATES } from './building_old_cafe';

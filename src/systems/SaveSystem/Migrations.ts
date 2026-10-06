@@ -30,14 +30,19 @@ export interface Migration {
 
 /** The ordered chain. Append-only. */
 export const MIGRATIONS: readonly Migration[] = [
-  // Example of the shape a future migration takes (kept as documentation, not code):
-  //
-  // {
-  //   from: 1,
-  //   to: 2,
-  //   description: 'add district synergy multipliers',
-  //   migrate: (state) => ({ ...state, synergy: { multipliers: {} } }),
-  // },
+  {
+    from: 1,
+    to: 2,
+    description: 'add temporary boosts and the pending offline reward',
+    migrate: (state) => ({
+      ...state,
+      boosts: (state.boosts as Record<string, unknown> | undefined) ?? { active: [] },
+      offline: (state.offline as Record<string, unknown> | undefined) ?? {
+        pending: null,
+        lastCollectedAt: 0,
+      },
+    }),
+  },
 ];
 
 export interface MigrationOutcome {

@@ -1,4 +1,5 @@
 import type { UpgradeDefinition } from '@/core/types/content';
+import { UPGRADES_OLD_CAFE } from './old_cafe_tiers';
 
 /**
  * UPGRADE CONTENT
@@ -10,4 +11,6 @@ import type { UpgradeDefinition } from '@/core/types/content';
  * Every upgrade must target an existing building and must be referenced by the tier it
  * unlocks. Adding one is a data change only.
  */
-export const UPGRADES: readonly UpgradeDefinition[] = [];
+export const UPGRADES: readonly UpgradeDefinition[] = [...UPGRADES_OLD_CAFE];
+
+export { UPGRADES_OLD_CAFE, OLD_CAFE_UPGRADE_IDS } from './old_cafe_tiers';

@@ -4,11 +4,12 @@ import { SystemClock, type GameClock } from '@/core/Time';
 import { EventBus } from '@/core/events/EventBus';
 import { contentRegistry, type ContentRegistry } from '@/core/content/ContentRegistry';
 import { DEFAULT_CONTENT } from '@/data';
-import { FEATURE_FLAGS, STORE_CATALOG } from '@/config/content';
+import { FEATURE_FLAGS, MOCK_STORE_PRICES, STORE_CATALOG } from '@/config/content';
 import { applyDevBalanceOverrides } from '@/config/balance';
 import { createDefaultStorageDriver } from '@/services/storage/StorageDrivers';
 import { MockRewardedAdService } from '@/services/monetization/MockRewardedAdService';
 import { MockPurchaseService } from '@/services/monetization/MockPurchaseService';
+import { WebAudioBackend } from '@/services/audio/WebAudioBackend';
 import { SaveSystem } from '@/systems/SaveSystem/SaveSystem';
 import { EconomySystem } from '@/systems/EconomySystem/EconomySystem';
 import { TimerSystem } from '@/systems/TimerSystem/TimerSystem';
@@ -19,7 +20,10 @@ import { ProgressionSystem } from '@/systems/ProgressionSystem/ProgressionSystem
 import { AdRewardSystem } from '@/systems/AdRewardSystem/AdRewardSystem';
 import { PurchaseSystem } from '@/systems/PurchaseSystem/PurchaseSystem';
 import { EventSystem } from '@/systems/EventSystem/EventSystem';
-import { AudioSystem } from '@/systems/AudioSystem/AudioSystem';
+import { AudioSystem, NoopAudioBackend } from '@/systems/AudioSystem/AudioSystem';
+import { BoostSystem } from '@/systems/BoostSystem/BoostSystem';
+import { TutorialSystem } from '@/systems/TutorialSystem/TutorialSystem';
+import { AnalyticsSystem, DevelopmentAnalyticsService } from '@/systems/AnalyticsSystem/AnalyticsSystem';
 import type { GameState } from '@/core/types/state';
 import type { StorageDriver } from '@/core/types/services';
 import type { LoadResult, SaveResult } from '@/systems/SaveSystem/SaveSystem';
@@ -34,6 +38,18 @@ import type { LoadResult, SaveResult } from '@/systems/SaveSystem/SaveSystem';
  * Dependency direction is acyclic: clock/events -> storage/content -> save ->
  * economy/timers -> buildings -> upgrades -> offline/progression/monetization.
  */
+/** Rewarded-ad placements the game offers. Named here so no scene uses a magic string. */
+export const AD_PLACEMENTS = {
+  /** Bottom restore panel: cut the running timer. */
+  timeSkip: 'placement.upgrade_speedup',
+  /** Coin button in the restore panel. */
+  bonusCoins: 'placement.bonus_coins',
+  /** Income boost button. */
+  incomeBoost: 'placement.income_boost',
+  /** Offline earnings popup: double the collected reward. */
+  offlineDouble: 'placement.offline_double',
+} as const;
+
 export interface ServiceContainerOptions {
   readonly storage?: StorageDriver;
   readonly clock?: GameClock;
@@ -64,6 +80,11 @@ export class ServiceContainer {
   private _ads: AdRewardSystem | null = null;
   private _purchases: PurchaseSystem | null = null;
   private _audio: AudioSystem | null = null;
+  private _boosts: BoostSystem | null = null;
+  private _tutorial: TutorialSystem | null = null;
+  private _analytics: AnalyticsSystem | null = null;
+  private _rewardedAds: MockRewardedAdService | null = null;
+  private _mockStore: MockPurchaseService | null = null;
 
   constructor(private readonly options: ServiceContainerOptions = {}) {
     this.clock = options.clock ?? new SystemClock();
@@ -139,6 +160,32 @@ export class ServiceContainer {
     return this._audio;
   }
 
+  get boosts(): BoostSystem {
+    if (!this._boosts) throw new Error('ServiceContainer.load() must be called before using systems');
+    return this._boosts;
+  }
+
+  get tutorial(): TutorialSystem {
+    if (!this._tutorial) throw new Error('ServiceContainer.load() must be called before using systems');
+    return this._tutorial;
+  }
+
+  get analytics(): AnalyticsSystem {
+    if (!this._analytics) throw new Error('ServiceContainer.load() must be called before using systems');
+    return this._analytics;
+  }
+
+  /**
+   * The development ad/store providers. Exposed so debug tooling can switch them on and
+   * off during QA; gameplay reads them through AdRewardSystem/PurchaseSystem only.
+   */
+  get devProviders(): {
+    readonly ads: MockRewardedAdService | null;
+    readonly store: MockPurchaseService | null;
+  } {
+    return { ads: this._rewardedAds, store: this._mockStore };
+  }
+
   /**
    * Boots the game: load (or create) the save, then build every system around the
    * loaded state. Safe to call once; repeated calls return the previous result.
@@ -153,7 +200,15 @@ export class ServiceContainer {
     this._state = state;
 
     this._economy = new EconomySystem(state, this.content, this.events, this.clock);
-    this._buildings = new BuildingSystem(state, this.content, this._economy, this.events, this.clock);
+    this._boosts = new BoostSystem(state, this.events, this.clock);
+    this._buildings = new BuildingSystem(
+      state,
+      this.content,
+      this._economy,
+      this._boosts,
+      this.events,
+      this.clock,
+    );
     this._upgrades = new UpgradeSystem(
       state,
       this.content,
@@ -163,18 +218,46 @@ export class ServiceContainer {
       this.events,
       this.clock,
     );
-    this._offline = new OfflineIncomeSystem(state, this.content, this._buildings, this.events, this.clock);
+    this._offline = new OfflineIncomeSystem(
+      state,
+      this.content,
+      this._buildings,
+      this._economy,
+      this.events,
+      this.clock,
+    );
     this._progression = new ProgressionSystem(state, this.content, this._economy, this._buildings, this.events);
+    // Development providers. Both are opt-in by construction: the ad service only ever
+    // responds to an explicit player tap, and the store only grants what the catalog says.
+    this._rewardedAds = new MockRewardedAdService({ knownPlacements: Object.values(AD_PLACEMENTS) });
+    this._mockStore = new MockPurchaseService({
+      products: STORE_CATALOG.map((entry) => ({
+        productId: entry.productId,
+        displayName: entry.displayName,
+        description: entry.description,
+        localizedPrice: MOCK_STORE_PRICES[entry.productId] ?? 'mock',
+        kind: entry.kind,
+      })),
+    });
+
     this._ads = new AdRewardSystem(
       this.content,
       this._economy,
       this._upgrades,
+      this._boosts,
+      this._offline,
       this.events,
       this.clock,
-      new MockRewardedAdService(),
+      this._rewardedAds,
     );
-    this._purchases = new PurchaseSystem(this._economy, new MockPurchaseService(), this.events, STORE_CATALOG);
-    this._audio = new AudioSystem(state, this.events);
+    this._purchases = new PurchaseSystem(this._economy, this._mockStore, this.events, STORE_CATALOG);
+    this._tutorial = new TutorialSystem(state, this.content, this.events);
+    this._analytics = new AnalyticsSystem(this.events, new DevelopmentAnalyticsService());
+    this._audio = new AudioSystem(
+      state,
+      this.events,
+      this.options.headless ? new NoopAudioBackend() : new WebAudioBackend(),
+    );
 
     this.wireAutosaveTriggers();
     this.loaded = true;
@@ -190,6 +273,7 @@ export class ServiceContainer {
 
   /** Full teardown: systems, timers and DOM listeners. Used on game destroy/tests. */
   dispose(): void {
+    this._analytics?.dispose();
     this._audio?.dispose();
     this.eventSystem.dispose();
     this.timers.dispose();
@@ -215,6 +299,10 @@ export class ServiceContainer {
       this.events.on('building:tier-changed', markDirty),
       this.events.on('stage:unlocked', markDirty),
       this.events.on('mastery:changed', markDirty),
+      // Boosts and the pending offline reward are part of the save too.
+      this.events.on('boost:applied', markDirty),
+      this.events.on('offline:summary-ready', markDirty),
+      this.events.on('offline:collected', markDirty),
     ];
     for (const unsubscribe of subscriptions) this.bag.add(unsubscribe);
   }

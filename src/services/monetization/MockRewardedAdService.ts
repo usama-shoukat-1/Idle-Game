@@ -31,6 +31,7 @@ export class MockRewardedAdService implements RewardedAdService {
 
   private ready = false;
   private showing = false;
+  private enabled = true;
   private outcome: MockAdOutcome;
   private readonly latencyMs: number;
   private readonly resolveOutcome?: (placementId: string) => MockAdOutcome;
@@ -49,7 +50,17 @@ export class MockRewardedAdService implements RewardedAdService {
     logger.debug('ads', 'mock rewarded ad service initialised (no network)');
   }
 
+  get isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  /** QA switch: a disabled provider reports "unavailable" for every placement. */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+  }
+
   getAvailability(placementId: string): AdAvailability {
+    if (!this.enabled) return 'unavailable';
     if (!this.ready) return 'loading';
     if (this.showing) return 'unavailable';
     if (this.knownPlacements.length > 0 && !this.knownPlacements.includes(placementId)) {

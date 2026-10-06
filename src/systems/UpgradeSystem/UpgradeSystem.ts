@@ -77,7 +77,11 @@ export class UpgradeSystem {
       }
 
       if (job.completesAt <= now) {
-        this.applyCompletion(job.upgradeId, 'rehydrate.offline-complete');
+        // Completed while the game was closed: keep the building's income anchor so the
+        // offline payout can still cover the whole absence (see OfflineIncomeSystem).
+        this.applyCompletion(job.upgradeId, 'rehydrate.offline-complete', {
+          preserveIncomeAnchor: true,
+        });
         completedOffline += 1;
         continue;
       }
@@ -224,8 +228,10 @@ export class UpgradeSystem {
   /**
    * Shortens a running job - the hook behind rewarded-ad speed-ups and any future
    * boost. Returns the number of milliseconds actually removed.
+   *
+   * @param source analytics tag: 'ad' for rewarded speed-ups, 'debug' for cheats.
    */
-  reduceRemaining(upgradeId: UpgradeId, reduceMs: number): number {
+  reduceRemaining(upgradeId: UpgradeId, reduceMs: number, source: 'ad' | 'debug' = 'ad'): number {
     const job = this.state.upgrades.active[upgradeId];
     if (!job) return 0;
 
@@ -241,7 +247,11 @@ export class UpgradeSystem {
     // completion ordering and events stay identical to the normal path).
     if (after <= 0) this.timers.tick();
 
-    return Math.max(0, before - after);
+    const applied = Math.max(0, before - after);
+    if (applied > 0) {
+      this.events.emit('upgrade:speed-up', { upgradeId, source, appliedMs: applied });
+    }
+    return applied;
   }
 
   /** Cost in gems to finish a running job instantly (content-driven conversion). */
@@ -249,12 +259,14 @@ export class UpgradeSystem {
     const job = this.state.upgrades.active[upgradeId];
     if (!job) return null;
     const balance = this.content.getEconomyBalance().acceleration;
-    const remainingMinutes = this.getRemainingMs(upgradeId) / 60_000;
-    const amount = Math.max(
-      balance.minimumGems,
-      Math.ceil(remainingMinutes * balance.gemsPerMinute),
-    );
-    return { currency: 'gems', amount: normalizeCurrencyAmount(amount) };
+    const remainingMs = this.getRemainingMs(upgradeId);
+    const remainingMinutes = remainingMs / 60_000;
+
+    // Phase 1 rule (content-driven): 1 gem per remaining minute, floored at the configured
+    // minimum and clamped so the cost can never exceed what the remaining time is worth.
+    const raw = Math.max(balance.minimumGems, Math.ceil(remainingMinutes * balance.gemsPerMinute));
+    const clamped = Math.min(normalizeCurrencyAmount(raw), Math.max(1, normalizeCurrencyAmount(remainingMs)));
+    return { currency: 'gems', amount: clamped };
   }
 
   /**
@@ -268,9 +280,20 @@ export class UpgradeSystem {
     const cost = this.getAccelerationCost(upgradeId);
     if (!cost) return false;
     if (!this.economy.canAfford(cost)) return false;
+
+    const remainingBefore = this.getRemainingMs(upgradeId);
     if (!this.economy.spend(cost, `upgrade.accelerate:${upgradeId}`)) return false;
 
-    return this.completeNow(upgradeId, 'upgrade.accelerated');
+    const completed = this.completeNow(upgradeId, 'upgrade.accelerated');
+    if (completed && remainingBefore > 0) {
+      // Gem finishes are speed-ups too: same analytics event, different source.
+      this.events.emit('upgrade:speed-up', {
+        upgradeId,
+        source: 'gems',
+        appliedMs: remainingBefore,
+      });
+    }
+    return completed;
   }
 
   /** Cancels a running job. Costs are not refunded (Phase 1 decides the policy). */
@@ -306,7 +329,11 @@ export class UpgradeSystem {
   }
 
   /** Applies an upgrade's effects exactly once and announces the completion. */
-  private applyCompletion(upgradeId: UpgradeId, reason: string): boolean {
+  private applyCompletion(
+    upgradeId: UpgradeId,
+    reason: string,
+    options: { preserveIncomeAnchor?: boolean } = {},
+  ): boolean {
     const definition = this.content.tryGetUpgrade(upgradeId);
     if (!definition) return false;
 
@@ -319,7 +346,9 @@ export class UpgradeSystem {
     }
 
     // Effects are content-driven: the tier and visual state come from the definition.
-    this.buildings.applyTier(definition.targetBuildingId, definition.tier, `upgrade:${upgradeId}`);
+    this.buildings.applyTier(definition.targetBuildingId, definition.tier, `upgrade:${upgradeId}`, {
+      preserveIncomeAnchor: options.preserveIncomeAnchor,
+    });
 
     // `unlocks` may name buildings or (later) features. Anything the runtime does not
     // recognise is reported instead of silently ignored.

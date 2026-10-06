@@ -20,6 +20,11 @@ export interface CurrencyChipOptions extends WidgetOptions {
   readonly events: EventBus;
   readonly width?: number;
   readonly height?: number;
+  /**
+   * Optional tap handler. Used by the gem counter to open the shop, which is why the chip
+   * owns its own hit area instead of requiring a separate "+" button next to it.
+   */
+  readonly onPress?: () => void;
 }
 
 export class CurrencyChip extends Widget {
@@ -74,6 +79,15 @@ export class CurrencyChip extends Widget {
       options.events.on('ads:reward-granted', () => this.flash()),
       options.events.on('purchase:completed', () => this.flash()),
     );
+
+    if (options.onPress) {
+      // A transparent hit rectangle: reliable touch target independent of the drawn shape.
+      const hitArea = this.addToWidget(
+        scene.add.rectangle(0, 0, this.chipWidth, this.chipHeight, 0x000000, 0).setOrigin(0.5, 0.5),
+      );
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on('pointerup', () => options.onPress?.());
+    }
 
     scene.events.on('update', this.step, this);
     this.unsubscribes.push(() => scene.events.off('update', this.step, this));

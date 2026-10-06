@@ -3,14 +3,18 @@
  * game balance - balance lives in `src/config/balance`.
  */
 
-/** Current save schema version. Bump on any breaking change to the persisted shape. */
-export const SAVE_SCHEMA_VERSION = 1;
+/**
+ * Current save schema version. Bump on any breaking change to the persisted shape.
+ * 1 -> 2 (Phase 1): added `boosts.active` and the pending offline reward (`offline`).
+ */
+export const SAVE_SCHEMA_VERSION = 2;
 
 /** localStorage namespace. All keys written by the game start with this prefix. */
 export const STORAGE_NAMESPACE = 'restore-it';
 
 /** Persisted keys (relative to the namespace). */
 export const STORAGE_KEYS = {
+  /** Storage slot name. Stable across schema versions: the version lives in the blob. */
   save: 'save.v1',
   settings: 'settings.v1',
   /** Written before risky operations so a corrupt primary save can be recovered. */

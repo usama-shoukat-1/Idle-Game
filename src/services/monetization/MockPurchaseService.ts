@@ -26,6 +26,7 @@ export class MockPurchaseService implements PurchaseService {
   readonly providerName = 'mock';
 
   private ready = false;
+  private enabled = true;
   private products: StoreProduct[];
   private readonly latencyMs: number;
   private nextStatus: PurchaseResult['status'] | null;
@@ -44,11 +45,23 @@ export class MockPurchaseService implements PurchaseService {
     logger.debug('purchase', `mock store initialised with ${this.products.length} product(s)`);
   }
 
+  get isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  /** QA switch: a disabled store reports no products and refuses purchases. */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+  }
+
   async getProducts(): Promise<readonly StoreProduct[]> {
-    return this.products;
+    return this.enabled ? this.products : [];
   }
 
   async purchase(productId: string): Promise<PurchaseResult> {
+    if (!this.enabled) {
+      return { status: 'unavailable', productId, error: 'store disabled (debug)' };
+    }
     if (!this.ready) {
       return { status: 'unavailable', productId, error: 'not initialised' };
     }

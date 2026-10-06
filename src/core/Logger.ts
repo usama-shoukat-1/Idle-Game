@@ -30,9 +30,15 @@ export type LogChannel =
   | 'input'
   | 'ui'
   | 'debug'
+  | 'boost'
+  | 'tutorial'
+  | 'analytics'
   | 'content';
 
 const CHANNEL_COLOURS: Partial<Record<LogChannel, string>> = {
+  boost: '#ffb27a',
+  tutorial: '#a6e3a1',
+  analytics: '#9db4d8',
   core: '#8fbcff',
   scene: '#7ee0d0',
   save: '#ffd479',

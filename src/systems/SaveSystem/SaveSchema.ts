@@ -1,5 +1,5 @@
 import { MAX_TRANSACTION_LOG, SAVE_SCHEMA_VERSION, STORAGE_KEYS } from '@/core/constants/GameConstants';
-import type { GameState, TransactionLogEntry } from '@/core/types/state';
+import type { BoostState, GameState, TransactionLogEntry } from '@/core/types/state';
 import { STATE_LIMITS } from '@/core/types/state';
 import type { BuildingId, StageId, UpgradeId, WorkerId } from '@/core/types/primitives';
 import { isBoolean, isObject, isStringArray, ValidationResult } from '@/core/utils/Validation';
@@ -126,7 +126,10 @@ export function validateStateShape(state: GameState): ValidationResult {
     .expect(isObject(state.progression), 'progression', 'must be an object')
     .expect(isObject(state.session), 'session', 'must be an object')
     .expect(isObject(state.settings), 'settings', 'must be an object')
-    .expect(isObject(state.tutorial), 'tutorial', 'must be an object');
+    .expect(isObject(state.tutorial), 'tutorial', 'must be an object')
+    .expect(isObject(state.boosts), 'boosts', 'must be an object')
+    .expect(Array.isArray(state.boosts?.active), 'boosts.active', 'must be an array')
+    .expect(isObject(state.offline), 'offline', 'must be an object');
 
   if (isObject(state.wallet)) {
     result
@@ -173,6 +176,16 @@ export function validateStateShape(state: GameState): ValidationResult {
     result
       .expect(isBoolean(state.tutorial.completed), 'tutorial.completed', 'must be a boolean')
       .expect(isStringArray(state.tutorial.completedStepIds), 'tutorial.completedStepIds', 'must be a string array');
+  }
+
+  if (isObject(state.offline) && state.offline.pending !== null) {
+    const pending = state.offline.pending;
+    const validPending =
+      isObject(pending) &&
+      isFiniteNumber(pending.coins) &&
+      isFiniteNumber(pending.effectiveElapsedMs) &&
+      isFiniteNumber(pending.computedAt);
+    result.expect(validPending, 'offline.pending', 'must be null or a well-formed reward');
   }
 
   if (!Array.isArray(state.transactions)) {
@@ -291,6 +304,60 @@ export function sanitizeState(state: GameState, contentStageIds: readonly StageI
     entry.lastIncomeAt = Number.isFinite(entry.lastIncomeAt) ? entry.lastIncomeAt : 0;
     entry.incomeProgress = Math.min(1, Math.max(0, Number(entry.incomeProgress) || 0));
     if (typeof entry.visualState !== 'string') entry.visualState = '';
+  }
+
+  // --- Temporary boosts (Phase 1) -----------------------------------------
+  if (!state.boosts || !Array.isArray(state.boosts.active)) {
+    state.boosts = { active: [] };
+    repairs.push('boosts reset');
+  }
+  state.boosts.active = state.boosts.active
+    .filter((boost): boost is BoostState => {
+      const valid =
+        Boolean(boost) &&
+        typeof boost.id === 'string' &&
+        typeof boost.kind === 'string' &&
+        isFiniteNumber(boost.amount) &&
+        isFiniteNumber(boost.startedAt) &&
+        isFiniteNumber(boost.expiresAt) &&
+        boost.expiresAt >= boost.startedAt;
+      return valid;
+    })
+    .slice(0, STATE_LIMITS.maxActiveBoosts);
+  if (state.boosts.active.length > STATE_LIMITS.maxActiveBoosts) {
+    repairs.push('excess boosts dropped');
+  }
+
+  // --- Pending offline reward ----------------------------------------------
+  if (!state.offline || typeof state.offline !== 'object') {
+    state.offline = { pending: null, lastCollectedAt: 0 };
+    repairs.push('offline state reset');
+  }
+  state.offline.lastCollectedAt = isFiniteNumber(state.offline.lastCollectedAt)
+    ? state.offline.lastCollectedAt
+    : 0;
+
+  const pending = state.offline.pending;
+  if (pending) {
+    const plausible =
+      isFiniteNumber(pending.coins) &&
+      pending.coins >= 0 &&
+      pending.coins <= STATE_LIMITS.maxPendingOfflineCoins &&
+      isFiniteNumber(pending.effectiveElapsedMs) &&
+      pending.effectiveElapsedMs >= 0 &&
+      isFiniteNumber(pending.computedAt);
+    if (!plausible) {
+      state.offline.pending = null;
+      repairs.push('implausible pending offline reward discarded');
+    } else {
+      state.offline.pending = {
+        ...pending,
+        coins: Math.floor(pending.coins),
+        perBuilding: Array.isArray(pending.perBuilding) ? pending.perBuilding : [],
+        boosted: Boolean(pending.boosted),
+        capped: Boolean(pending.capped),
+      };
+    }
   }
 
   // `settings` is deliberately NOT repaired here: SaveSystem merges missing slices with

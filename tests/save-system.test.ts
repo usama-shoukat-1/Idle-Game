@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MemoryStorageDriver } from '@/services/storage/StorageDrivers';
-import { STORAGE_KEYS } from '@/core/constants/GameConstants';
+import { SAVE_SCHEMA_VERSION, STORAGE_KEYS } from '@/core/constants/GameConstants';
 import { deserializeState, serializeState } from '@/systems/SaveSystem/SaveSchema';
 import { createDefaultGameState } from '@/systems/SaveSystem/GameStateFactory';
 import { createTestContent, createTestEnvironment, type TestEnvironment } from './helpers/TestEnvironment';
@@ -183,7 +183,7 @@ describe('SaveSystem', () => {
     const parsed = deserializeState(raw);
 
     expect(parsed.state).not.toBeNull();
-    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
     expect(JSON.parse(raw).savedAtIso).toBe(new Date(1234).toISOString());
     expect(JSON.parse(raw).checksum).toBeTruthy();
   });
